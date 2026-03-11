@@ -1,64 +1,64 @@
 name: Create Jira Ticket
 
+# Trigger when a new issue is opened
 on:
   issues:
     types: [opened]
 
-jobs:
+# Ensure GITHUB_TOKEN has issue write permissions
+permissions:
+  issues: write
 
+jobs:
   jira:
 
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Extract Issue Data
+      # Step 1: Parse Issue Data
+      - name: Extract Title and Description
         run: |
-
           TITLE="${{ github.event.issue.title }}"
           BODY='${{ github.event.issue.body }}'
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
 
-          echo "$BODY" > body.txt
-
-          DESC=$(grep -o '{.*}' body.txt | jq -r '.description')
+          # Extract JSON payload (description) from the body
+          DESC=$(echo "$BODY" | grep -o '{.*}' | jq -r '.description')
 
           echo "TITLE=$TITLE" >> $GITHUB_ENV
           echo "DESC=$DESC" >> $GITHUB_ENV
-          echo "ISSUE_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          echo "ISSUE_NUMBER=$ISSUE_NUMBER" >> $GITHUB_ENV
 
+      # Step 2: Create Jira Ticket
       - name: Create Jira Ticket
         id: jira
         run: |
-
           RESPONSE=$(curl -s -X POST \
-          -H "Authorization: Basic ${{ secrets.JIRA_AUTH }}" \
-          -H "Content-Type: application/json" \
-          --data '{
-            "fields": {
-              "project": {
-                "key": "'"${{ secrets.JIRA_PROJECT }}"'"
-              },
-              "summary": "'"$TITLE"'",
-              "description": "'"$DESC"'",
-              "issuetype": {
-                "name": "Task"
+            -H "Authorization: Basic ${{ secrets.JIRA_AUTH }}" \
+            -H "Content-Type: application/json" \
+            --data '{
+              "fields": {
+                "project": {"key": "'"${{ secrets.JIRA_PROJECT }}"'"},
+                "summary": "'"$TITLE"'",
+                "description": "'"$DESC"'",
+                "issuetype": {"name": "Task"}
               }
-            }
-          }' \
-          ${{ secrets.JIRA_URL }}/rest/api/3/issue)
+            }' \
+            ${{ secrets.JIRA_URL }}/rest/api/3/issue)
 
+          # Extract Jira key
           KEY=$(echo $RESPONSE | jq -r '.key')
-
           echo "JIRA_KEY=$KEY" >> $GITHUB_ENV
 
-      - name: Update GitHub Issue With Jira Link
+      # Step 3: Update GitHub Issue with Jira link
+      - name: Update GitHub Issue with Jira Link
         run: |
+          JIRA_LINK="${{ secrets.JIRA_URL }}/browse/$JIRA_KEY"
+          BODY="Jira ticket created: $JIRA_LINK"
 
-          BODY="Jira ticket created: ${{ secrets.JIRA_URL }}/browse/$JIRA_KEY"
-
-          curl \
-          -X PATCH \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github+json" \
-          https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUMBER \
-          -d "{\"body\":\"$BODY\"}"
+          curl -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUMBER \
+            -d "{\"body\":\"$BODY\"}"
