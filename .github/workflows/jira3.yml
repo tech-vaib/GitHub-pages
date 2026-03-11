@@ -1,0 +1,49 @@
+name: Jira Ticket Creator
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Jira ticket title"
+        required: true
+        type: string
+      description:
+        description: "Jira ticket description"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create-jira:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create Jira Ticket
+        id: jira
+        run: |
+          TITLE="${{ github.event.inputs.title }}"
+          DESC="${{ github.event.inputs.description }}"
+
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Basic ${{ secrets.JIRA_AUTH }}" \
+            -H "Content-Type: application/json" \
+            --data '{
+              "fields": {
+                "project": {"key": "'"${{ secrets.JIRA_PROJECT }}"'"},
+                "summary": "'"$TITLE"'",
+                "description": "'"$DESC"'",
+                "issuetype": {"name": "Task"}
+              }
+            }' \
+            ${{ secrets.JIRA_URL }}/rest/api/3/issue)
+
+          # Extract Jira ticket key
+          KEY=$(echo $RESPONSE | jq -r '.key')
+          echo "JIRA_KEY=$KEY" >> $GITHUB_ENV
+          echo "Jira ticket created: $KEY"
+
+      - name: Show Jira Key
+        run: |
+          echo "Jira Ticket Number: $JIRA_KEY"
