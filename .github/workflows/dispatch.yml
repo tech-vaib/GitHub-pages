@@ -1,64 +1,49 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Create Jira Ticket</title>
-</head>
-<body>
+name: Jira Ticket Creator
 
-<h2>Create Jira Ticket</h2>
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Jira ticket title"
+        required: true
+        type: string
+      description:
+        description: "Jira ticket description"
+        required: true
+        type: string
 
-<label>Title</label><br>
-<input type="text" id="title" required><br><br>
+permissions:
+  contents: read
 
-<label>Description</label><br>
-<textarea id="description" rows="6" cols="40" required></textarea><br><br>
+jobs:
+  create-jira:
+    runs-on: ubuntu-latest
 
-<button id="submitBtn">Submit</button>
+    steps:
+      - name: Create Jira Ticket
+        id: jira
+        run: |
+          TITLE="${{ github.event.inputs.title }}"
+          DESC="${{ github.event.inputs.description }}"
 
-<p id="status"></p>
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Basic ${{ secrets.JIRA_AUTH }}" \
+            -H "Content-Type: application/json" \
+            --data '{
+              "fields": {
+                "project": {"key": "'"${{ secrets.JIRA_PROJECT }}"'"},
+                "summary": "'"$TITLE"'",
+                "description": "'"$DESC"'",
+                "issuetype": {"name": "Task"}
+              }
+            }' \
+            ${{ secrets.JIRA_URL }}/rest/api/3/issue)
 
-<script>
-document.getElementById("submitBtn").onclick = async function() {
+          # Extract Jira key
+          KEY=$(echo $RESPONSE | jq -r '.key')
+          echo "JIRA_KEY=$KEY" >> $GITHUB_ENV
+          echo "Jira ticket created: $KEY"
 
-  const title = document.getElementById("title").value;
-  const description = document.getElementById("description").value;
-
-  const payload = {
-    title: title,
-    description: description
-  };
-
-  const workflowUrl = "https://api.github.com/repos/YOUR_USERNAME/YOUR_REPO/actions/workflows/jira.yml/dispatches";
-
-  try {
-    const response = await fetch(workflowUrl, {
-      method: "POST",
-      headers: {
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer YOUR_PERSONAL_ACCESS_TOKEN" // only needed to trigger workflow_dispatch
-      },
-      body: JSON.stringify({
-        ref: "main",           // branch to run workflow on
-        inputs: payload        // title + description
-      })
-    });
-
-    if(response.ok) {
-      document.getElementById("status").innerText = 
-        "Jira ticket creation triggered. Please check shortly for the Jira number.";
-      document.getElementById("title").value = "";
-      document.getElementById("description").value = "";
-    } else {
-      const err = await response.json();
-      document.getElementById("status").innerText = "Error: " + err.message;
-    }
-
-  } catch(e) {
-    document.getElementById("status").innerText = "Error: " + e.message;
-  }
-
-}
-</script>
-
-</body>
-</html>
+      - name: Return Jira Key (Optional)
+        run: |
+          echo "Jira Ticket: $JIRA_KEY"
